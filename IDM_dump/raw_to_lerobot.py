@@ -452,6 +452,8 @@ def main():
             args.embodiment = "franka"
         elif 'so100' in args.output_dir:
             args.embodiment = "so100"
+        elif 'nps_hamming' in args.output_dir:
+            args.embodiment = "nps_hamming"
         else:
             raise ValueError(f"Unknown embodiment for {args.output_dir}")\
 
@@ -463,6 +465,8 @@ def main():
         args.annotation_source = "language.language_instruction"
     elif args.embodiment == "so100":
         args.annotation_source = "human.task_description"
+    elif args.embodiment == "nps_hamming":
+        args.annotation_source = "language.task"
     
     if args.recursive:
         # Process a single folder (original behavior)
@@ -498,6 +502,8 @@ def main():
         source_dir = "IDM_dump/global_metadata/franka"
     elif args.embodiment == "so100":
         source_dir = "IDM_dump/global_metadata/so100"
+    elif args.embodiment == "nps_hamming":
+        source_dir = "IDM_dump/global_metadata/nps_hamming"
     
     # copy modality.json
     shutil.copy(source_dir + "/modality.json", args.output_dir + "/meta/modality.json")
