@@ -59,10 +59,11 @@ Scripts are below `IDM_dump/scripts/preprocess` folder. Replace the `source_dir`
 - `gr1`: Fourier GR1 Humanoid Robot
 - `so100`: SO-100 Robot Arm
 - `robocasa`: RoboCasa (Simulation)
+- `nps_hamming`: Naval Postgraduate School Hamming Humanoid Robot (see [getting_started/nps_hamming.md](getting_started/nps_hamming.md))
 
 
 ### (Optional) 3.3 Training Custom IDM model
-**NOTE: This is only needed if the target embodiment is different from the 4 embodiments that we provide (franka, gr1, so100, and robocasa).**
+**NOTE: This is only needed if the target embodiment is different from the embodiments that we provide (franka, gr1, so100, robocasa, and nps_hamming).**
 
 #### Training IDM model within the `DreamGen` environment
 Given a few ground-truth trajectories of a specific embodiment, we can train an IDM model. 
