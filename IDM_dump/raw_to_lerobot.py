@@ -439,30 +439,58 @@ def main():
     parser.add_argument("--recursive", action="store_true", help="Process a single folder instead of multiple folders")
     parser.add_argument("--data_type", type=str, default="dream", choices=["lapa", "dream"])
     parser.add_argument("--embodiment", type=str, default=None, help="Embodiment")
+    parser.add_argument(
+        "--annotation_source",
+        type=str,
+        default=None,
+        help=(
+            "Annotation channel to copy into the LeRobot metadata. "
+            "When omitted, the source is inferred from the embodiment."
+        ),
+    )
     parser.add_argument("--video_key", type=str, default=None, help="Video key if cosmos_predict2 is false")
 
     args = parser.parse_args()
 
     if args.embodiment is None:
-        if 'robocasa' in args.output_dir:
-            args.embodiment = "robocasa_panda_omron"
-        elif 'gr1' in args.output_dir:
-            args.embodiment = "gr1_unified"
-        elif 'franka' in args.output_dir:
-            args.embodiment = "franka"
-        elif 'so100' in args.output_dir:
-            args.embodiment = "so100"
-        else:
-            raise ValueError(f"Unknown embodiment for {args.output_dir}")\
+        inferred_embodiment = None
+        output_dir_hint = str(args.output_dir)
+        embodiment_hints = {
+            "robocasa": "robocasa_panda_omron",
+            "gr1": "gr1_unified",
+            "franka": "franka",
+            "so100": "so100",
+            "nps_hamming": "nps_hamming",
+        }
+        for hint, embodiment in embodiment_hints.items():
+            if hint in output_dir_hint:
+                inferred_embodiment = embodiment
+                break
 
-    if args.embodiment == "robocasa_panda_omron":
-        args.annotation_source = "human.action.task_description"
-    elif args.embodiment == "gr1_unified":
-        args.annotation_source = "human.coarse_action"
-    elif args.embodiment == "franka":
-        args.annotation_source = "language.language_instruction"
-    elif args.embodiment == "so100":
-        args.annotation_source = "human.task_description"
+        if inferred_embodiment is None:
+            raise ValueError(
+                "Unknown embodiment. Please supply --embodiment explicitly or "
+                f"use an output directory that contains one of {list(embodiment_hints)}."
+            )
+
+        args.embodiment = inferred_embodiment
+
+    annotation_sources = {
+        "robocasa_panda_omron": "human.action.task_description",
+        "gr1_unified": "human.coarse_action",
+        "franka": "language.language_instruction",
+        "so100": "human.task_description",
+        "nps_hamming": "annotation.language.task",
+    }
+
+    if args.annotation_source is None:
+        try:
+            args.annotation_source = annotation_sources[args.embodiment]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unsupported embodiment '{args.embodiment}'. Please update the "
+                "annotation source mapping in raw_to_lerobot.py."
+            ) from exc
     
     if args.recursive:
         # Process a single folder (original behavior)
@@ -490,14 +518,20 @@ def main():
             video_key=args.video_key
         )
 
-    if args.embodiment == "gr1_unified": 
-        source_dir = "IDM_dump/global_metadata/gr1"
-    elif args.embodiment == "robocasa_panda_omron":
-        source_dir = "IDM_dump/global_metadata/robocasa"
-    elif args.embodiment == "franka":
-        source_dir = "IDM_dump/global_metadata/franka"
-    elif args.embodiment == "so100":
-        source_dir = "IDM_dump/global_metadata/so100"
+    metadata_roots = {
+        "gr1_unified": "IDM_dump/global_metadata/gr1",
+        "robocasa_panda_omron": "IDM_dump/global_metadata/robocasa",
+        "franka": "IDM_dump/global_metadata/franka",
+        "so100": "IDM_dump/global_metadata/so100",
+        "nps_hamming": "IDM_dump/global_metadata/nps_hamming",
+    }
+
+    try:
+        source_dir = metadata_roots[args.embodiment]
+    except KeyError as exc:
+        raise ValueError(
+            f"No metadata template registered for embodiment '{args.embodiment}'."
+        ) from exc
     
     # copy modality.json
     shutil.copy(source_dir + "/modality.json", args.output_dir + "/meta/modality.json")

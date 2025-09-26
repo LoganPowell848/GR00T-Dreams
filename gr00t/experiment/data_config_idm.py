@@ -14,6 +14,10 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
+import json
+from pathlib import Path
+from typing import Any
 
 from gr00t.data.dataset import ModalityConfig
 from gr00t.data.transform.base import ComposedModalityTransform, ModalityTransform
@@ -31,6 +35,28 @@ from gr00t.data.transform.video import (
     VideoToTensor,
 )
 from gr00t.model.transforms_idm import GR00TIDMTransform
+
+
+def _coerce_modes(
+    keys: list[str], value: Mapping[str, Any] | str | None
+) -> dict[str, Any]:
+    """Utility to normalize per-key configuration dictionaries.
+
+    Args:
+        keys: The modality keys that should share the same configuration when a
+            single value is provided.
+        value: Either ``None`` (no configuration), a single string applied to
+            all keys or an explicit mapping from key to configuration value.
+
+    Returns:
+        A dictionary that can be passed directly to ``StateActionTransform``.
+    """
+
+    if value is None:
+        return {}
+    if isinstance(value, Mapping):
+        return dict(value)
+    return {key: value for key in keys}
 
 
 class BaseDataConfig(ABC):
@@ -776,6 +802,163 @@ class FrankaDataConfig(BaseDataConfig):
         return ComposedModalityTransform(transforms=transforms)
 
 
+class NpsHammingDataConfig(BaseDataConfig):
+    """Data configuration for the NPS Hamming platform.
+
+    The configuration is intentionally metadata-driven: keys, horizons and
+    normalization strategies are loaded from
+    ``IDM_dump/global_metadata/nps_hamming/config.json`` so that teams can adapt
+    the DreamGen pipeline to their local telemetry layout without modifying the
+    source code. See the accompanying README in that directory for guidance on
+    populating the metadata files.
+    """
+
+    def __init__(self) -> None:
+        metadata_root = (
+            Path(__file__).resolve().parents[2]
+            / "IDM_dump"
+            / "global_metadata"
+            / "nps_hamming"
+        )
+        config_path = metadata_root / "config.json"
+        if not config_path.exists():
+            raise FileNotFoundError(
+                "NPS Hamming config.json was not found. "
+                "Please create IDM_dump/global_metadata/nps_hamming/config.json "
+                "using the provided template."
+            )
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        self.video_keys = config.get("video_keys", ["video.front_view"])
+        self.state_keys = config.get("state_keys", ["state.joints"])
+        self.action_keys = config.get("action_keys", ["action.joints"])
+        self.language_keys = config.get("language_keys", [])
+
+        self.observation_indices = config.get("observation_indices", [0, 16])
+        self.action_indices = config.get("action_indices", list(range(16)))
+
+        self.video_resize = config.get(
+            "video_resize", {"height": 224, "width": 224, "interpolation": "linear"}
+        )
+        self.video_crop_scale = config.get("video_crop_scale", 0.95)
+        self.video_color_jitter = config.get("video_color_jitter", {
+            "brightness": 0.3,
+            "contrast": 0.4,
+            "saturation": 0.5,
+            "hue": 0.08,
+        })
+
+        self.state_normalization_modes = _coerce_modes(
+            self.state_keys, config.get("state_normalization_mode", "min_max")
+        )
+        self.action_normalization_modes = _coerce_modes(
+            self.action_keys, config.get("action_normalization_mode", "min_max")
+        )
+
+        self.state_target_rotations = _coerce_modes(
+            self.state_keys, config.get("state_target_rotations")
+        )
+        self.action_target_rotations = _coerce_modes(
+            self.action_keys, config.get("action_target_rotations")
+        )
+
+        self._max_state_dim = config.get("max_state_dim", 64)
+        self._max_action_dim = config.get("max_action_dim", 32)
+
+    def modality_config(self) -> dict[str, ModalityConfig]:
+        video_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.video_keys,
+        )
+
+        state_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.state_keys,
+        )
+
+        action_modality = ModalityConfig(
+            delta_indices=self.action_indices,
+            modality_keys=self.action_keys,
+        )
+
+        language_modality = ModalityConfig(
+            delta_indices=self.observation_indices,
+            modality_keys=self.language_keys,
+        )
+
+        modality_configs = {
+            "video": video_modality,
+            "state": state_modality,
+            "action": action_modality,
+            "language": language_modality,
+        }
+
+        return modality_configs
+
+    def transform(self) -> ModalityTransform:
+        transforms = [
+            VideoToTensor(apply_to=self.video_keys),
+        ]
+
+        if self.video_crop_scale is not None:
+            transforms.append(
+                VideoCrop(apply_to=self.video_keys, scale=self.video_crop_scale)
+            )
+
+        transforms.append(
+            VideoResize(
+                apply_to=self.video_keys,
+                height=self.video_resize.get("height", 224),
+                width=self.video_resize.get("width", 224),
+                interpolation=self.video_resize.get("interpolation", "linear"),
+            )
+        )
+
+        if self.video_color_jitter:
+            transforms.append(
+                VideoColorJitter(
+                    apply_to=self.video_keys,
+                    brightness=self.video_color_jitter.get("brightness", 0.0),
+                    contrast=self.video_color_jitter.get("contrast", 0.0),
+                    saturation=self.video_color_jitter.get("saturation", 0.0),
+                    hue=self.video_color_jitter.get("hue", 0.0),
+                )
+            )
+
+        transforms.extend(
+            [
+                VideoToNumpy(apply_to=self.video_keys),
+                StateActionToTensor(apply_to=self.state_keys),
+                StateActionTransform(
+                    apply_to=self.state_keys,
+                    normalization_modes=self.state_normalization_modes,
+                    target_rotations=self.state_target_rotations,
+                ),
+                StateActionToTensor(apply_to=self.action_keys),
+                StateActionTransform(
+                    apply_to=self.action_keys,
+                    normalization_modes=self.action_normalization_modes,
+                    target_rotations=self.action_target_rotations,
+                ),
+                ConcatTransform(
+                    video_concat_order=self.video_keys,
+                    state_concat_order=self.state_keys,
+                    action_concat_order=self.action_keys,
+                ),
+                GR00TIDMTransform(
+                    state_horizon=len(self.observation_indices),
+                    action_horizon=len(self.action_indices),
+                    max_state_dim=self._max_state_dim,
+                    max_action_dim=self._max_action_dim,
+                ),
+            ]
+        )
+
+        return ComposedModalityTransform(transforms=transforms)
+
+
 DATA_CONFIG_MAP = {
     "gr1_arms_waist": Gr1ArmsWaistDataConfig(),
     "gr1_arms_only": Gr1ArmsOnlyDataConfig(),
@@ -785,4 +968,5 @@ DATA_CONFIG_MAP = {
     "single_panda_gripper": SinglePandaGripperDataConfig(),
     "so100": So100DataConfig(),
     "franka": FrankaDataConfig(),
+    "nps_hamming": NpsHammingDataConfig(),
 }
