@@ -42,6 +42,11 @@ class EmbodimentTag(Enum):
     The ROBOCASA dataset.
     """
 
+    NPS_HAMMING = "nps_hamming"
+    """
+    The Naval Postgraduate School Hamming humanoid dataset.
+    """
+
     NEW_EMBODIMENT = "new_embodiment"
     """
     Any new embodiment for finetuning.

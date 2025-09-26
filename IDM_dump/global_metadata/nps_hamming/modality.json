@@ -1,0 +1,30 @@
+{
+    "state": {
+        "joints": {
+            "start": 0,
+            "end": 18
+        },
+        "gripper": {
+            "start": 18,
+            "end": 20
+        }
+    },
+    "action": {
+        "joints": {
+            "start": 0,
+            "end": 18
+        },
+        "gripper": {
+            "start": 18,
+            "end": 20
+        }
+    },
+    "video": {
+        "front_view": {
+            "original_key": "observation.images.front_view"
+        }
+    },
+    "annotation": {
+        "annotation.language.task": {}
+    }
+}

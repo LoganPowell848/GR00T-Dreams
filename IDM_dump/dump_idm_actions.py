@@ -83,6 +83,8 @@ def load_dataset_and_config(checkpoint_path, validation_dataset_path, video_indi
         embodiment_tag = EmbodimentTag.SO100
     elif "robocasa" in embodiment:
         embodiment_tag = EmbodimentTag.ROBOCASA
+    elif "nps_hamming" in embodiment:
+        embodiment_tag = EmbodimentTag.NPS_HAMMING
     else:
         raise ValueError(f"Unknown embodiment: {embodiment}")
 
